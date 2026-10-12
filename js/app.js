@@ -4,7 +4,7 @@
   const config = window.HAP_CONFIG || {};
   const configured = config.SUPABASE_URL && !config.SUPABASE_URL.includes("YOUR-PROJECT-REF")
     && config.SUPABASE_ANON_KEY && !config.SUPABASE_ANON_KEY.includes("YOUR_SUPABASE");
-  let client = null, currentUser = null, currentProfile = null, products = [], orders = [];
+  let client = null, currentUser = null, currentProfile = null, products = [], orders = [], presenceTimer = null;
   const statusLabels = {
     new:"جديد", review:"تحت المراجعة", approved:"معتمد", preparing:"جاري التجهيز",
     ready_to_ship:"جاهز للشحن", handed_to_courier:"استلمه المندوب",
@@ -29,16 +29,19 @@
     document.querySelectorAll(".page").forEach(el=>el.classList.add("hidden"));
     const target=$("page-"+page); if(target) target.classList.remove("hidden");
     document.querySelectorAll(".nav-item").forEach(el=>el.classList.toggle("active",el.dataset.page===page));
-    const names={dashboard:"لوحة التحكم",orders:"الأوردرات","new-order":"إنشاء أوردر",products:"المنتجات والمخزون",shipping:"الشحن والتوصيل"};
+    const names={dashboard:"لوحة التحكم",orders:"الأوردرات","new-order":"إنشاء أوردر",products:"المنتجات والمخزون",shipping:"الشحن والتوصيل",users:"إدارة المستخدمين",online:"متصل الآن"};
     $("page-title").textContent=names[page]||"النظام";
     if(page==="dashboard") loadDashboard();
     if(page==="orders") loadOrders();
     if(page==="products") loadProducts();
     if(page==="new-order") prepareOrderForm();
     if(page==="shipping") loadShipping();
+    if(page==="users") loadUsers();
+    if(page==="online") loadOnline();
+    if(currentUser) updatePresence(page, `فتح صفحة ${names[page]||page}`);
   }
   async function loadProfile(user) {
-    const {data,error}=await client.from("profiles").select("id,full_name,role,active").eq("id",user.id).maybeSingle();
+    const {data,error}=await client.from("profiles").select("id,full_name,username,role,active").eq("id",user.id).maybeSingle();
     if(error) throw error;
     if(!data || !data.active) throw new Error("الحساب غير مفعل أو لم يتم إنشاء ملف الموظف. راجع مدير النظام.");
     currentProfile=data;
@@ -50,8 +53,8 @@
   }
   function applyRoleNavigation(role) {
     const allowed = {
-      owner:["dashboard","orders","new-order","products","shipping"],
-      admin:["dashboard","orders","new-order","products","shipping"],
+      owner:["dashboard","orders","new-order","products","shipping","users","online"],
+      admin:["dashboard","orders","new-order","products","shipping","users","online"],
       sales_supervisor:["dashboard","orders","new-order"],
       sales:["dashboard","orders","new-order"],
       warehouse:["dashboard","orders","products"],
@@ -79,14 +82,20 @@
     currentUser=user;
     await loadProfile(user);
     showScreen("app-screen");
+    await updatePresence("dashboard","تسجيل الدخول إلى النظام");
+    if(presenceTimer) clearInterval(presenceTimer);
+    presenceTimer=setInterval(()=>updatePresence(document.querySelector(".nav-item.active")?.dataset.page||"dashboard","نشط داخل النظام"),30000);
   }
   $("login-form").addEventListener("submit",async e=>{
     e.preventDefault(); if(!client) return;
     $("login-error").textContent="";
-    const email=$("email").value.trim(),password=$("password").value;
-    const {data,error}=await client.auth.signInWithPassword({email,password});
-    if(error){$("login-error").textContent="تعذر تسجيل الدخول: "+error.message;return;}
-    try { await enterApp(data.user); } catch(err) {$("login-error").textContent=err.message;await client.auth.signOut();}
+    const username=$("username").value.trim().toLowerCase(),password=$("password").value;
+    const {data,error}=await client.functions.invoke("username-login",{body:{username,password}});
+    if(!error && data?.access_token && data?.refresh_token){ const {error:setError}=await client.auth.setSession({access_token:data.access_token,refresh_token:data.refresh_token}); if(setError){$("login-error").textContent="تعذر بدء الجلسة: "+setError.message;return;} }
+    if(error){$("login-error").textContent="تعذر تسجيل الدخول باسم المستخدم: "+error.message;return;}
+    const signedUser=(await client.auth.getUser()).data.user;
+    if(!signedUser){$("login-error").textContent="لم يتم إنشاء جلسة دخول. تأكد من نشر وظيفة username-login.";return;}
+    try { await enterApp(signedUser); } catch(err) {$("login-error").textContent=err.message;await client.auth.signOut();}
   });
   $("logout-btn").addEventListener("click",async()=>{if(client) await client.auth.signOut();});
   $("main-nav").addEventListener("click",e=>{const b=e.target.closest("[data-page]");if(b&&!b.classList.contains("hidden"))showPage(b.dataset.page);});
@@ -156,6 +165,38 @@
     if(error){toast("تعذر إضافة المنتج: "+error.message,true);return;}
     e.target.reset();toast("تمت إضافة المنتج. أضف الرصيد الافتتاحي عبر حركة مخزنية معتمدة.");loadProducts();
   });
+
+  const pageLabels={dashboard:"لوحة التحكم",orders:"الأوردرات","new-order":"إنشاء أوردر",products:"المنتجات والمخزون",shipping:"الشحن والتوصيل",users:"إدارة المستخدمين",online:"متصل الآن"};
+  async function updatePresence(page, activity) {
+    if(!client||!currentUser||!currentProfile)return;
+    try { await client.from("online_sessions").upsert({user_id:currentUser.id,username:currentProfile.username||currentUser.user_metadata?.username||"—",full_name:currentProfile.full_name,current_page:pageLabels[page]||page,current_activity:activity,last_seen_at:new Date().toISOString()}, {onConflict:"user_id"}); } catch(e) { console.debug("presence update unavailable",e.message); }
+  }
+  async function loadUsers() {
+    if(!client||!currentProfile||!['admin','owner'].includes(currentProfile.role))return;
+    const {data,error}=await client.from("profiles").select("id,full_name,username,role,active,created_at").order("created_at",{ascending:false});
+    if(error){toast("تعذر عرض المستخدمين: "+error.message,true);return;}
+    $("users-table").innerHTML=(data||[]).map(u=>`<tr><td>${esc(u.full_name)}</td><td>${esc(u.username||"—")}</td><td>${esc(roleLabel(u.role))}</td><td>${u.active?"نشط":"موقوف"}</td></tr>`).join("")||'<tr><td colspan="4" class="empty">لا يوجد مستخدمون</td></tr>';
+  }
+  async function loadOnline() {
+    if(!client||!currentProfile||!['admin','owner'].includes(currentProfile.role))return;
+    const cutoff=new Date(Date.now()-90000).toISOString();
+    const {data,error}=await client.from("online_sessions").select("user_id,username,full_name,current_page,current_activity,last_seen_at").gte("last_seen_at",cutoff).order("last_seen_at",{ascending:false});
+    if(error){toast("تعذر تحميل المتصلين: "+error.message,true);return;}
+    $("online-table").innerHTML=(data||[]).map(u=>`<tr><td>${esc(u.full_name||"—")}</td><td>${esc(u.username||"—")}</td><td>${esc(u.current_page||"—")}</td><td>${esc(u.current_activity||"—")}</td><td>${new Date(u.last_seen_at).toLocaleTimeString("ar-EG")}</td></tr>`).join("")||'<tr><td colspan="5" class="empty">لا يوجد مستخدمون نشطون خلال آخر 90 ثانية</td></tr>';
+  }
+  $("user-create-form").addEventListener("submit",async e=>{
+    e.preventDefault(); if(!client||!currentUser)return;
+    const submit=e.submitter;submit.disabled=true;setMessage("user-create-message","جارٍ إنشاء الحساب...");
+    try {
+      const {data,error}=await client.functions.invoke("admin-create-user",{body:{full_name:$("new-user-name").value.trim(),username:$("new-username").value.trim().toLowerCase(),email:$("new-user-email").value.trim(),password:$("new-user-password").value,role:$("new-user-role").value}});
+      if(error)throw error; if(data?.error)throw new Error(data.error);
+      e.target.reset();setMessage("user-create-message","تم إنشاء المستخدم بنجاح.");await loadUsers();
+    } catch(err){setMessage("user-create-message","تعذر إنشاء المستخدم: "+err.message,true);}
+    finally{submit.disabled=false;}
+  });
+  $("refresh-users").addEventListener("click",loadUsers);$("refresh-online").addEventListener("click",loadOnline);
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden&&currentUser)updatePresence(document.querySelector(".nav-item.active")?.dataset.page||"dashboard","عاد إلى نافذة النظام");});
+  document.addEventListener("click",e=>{const el=e.target.closest("button,input,select");if(el&&currentUser)updatePresence(document.querySelector(".nav-item.active")?.dataset.page||"dashboard",`تفاعل مع ${el.innerText||el.getAttribute("aria-label")||el.id||el.tagName}`);});
 
   function lineTemplate() {
     const wrap=document.createElement("div");wrap.className="order-line";

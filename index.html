@@ -26,8 +26,8 @@
       <p class="eyebrow">HYPER ADAM PHONE</p>
       <h1>تسجيل الدخول</h1>
       <p class="muted">ادخل بحساب الموظف المخصص لك</p>
-      <label for="email">البريد الإلكتروني</label>
-      <input id="email" name="email" type="email" autocomplete="username" required>
+      <label for="username">اسم المستخدم</label>
+      <input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" required>
       <label for="password">كلمة المرور</label>
       <input id="password" name="password" type="password" autocomplete="current-password" required>
       <button class="btn primary full" type="submit">دخول إلى النظام</button>
@@ -47,6 +47,8 @@
         <button class="nav-item" data-page="new-order">＋ <span>إنشاء أوردر</span></button>
         <button class="nav-item" data-page="products">▣ <span>المنتجات والمخزون</span></button>
         <button class="nav-item" data-page="shipping">➜ <span>الشحن والتوصيل</span></button>
+        <button class="nav-item hidden" data-page="users">♙ <span>إدارة المستخدمين</span></button>
+        <button class="nav-item hidden" data-page="online">● <span>متصل الآن</span></button>
       </nav>
       <div class="sidebar-bottom">
         <div id="user-summary" class="user-summary"></div>
@@ -138,6 +140,10 @@
           <p class="notice">تأكيد التسليم والتحصيل النهائي يجب أن يتم عبر وظيفة قاعدة بيانات آمنة قبل استخدام النظام تشغيليًا. هذه الشاشة تعرض البيانات ولا تمنح صلاحية مالية مستقلة.</p>
         </div>
       </section>
+      <section id="page-users" class="page hidden"><div class="panel"><div class="panel-heading"><div><h3>إدارة المستخدمين</h3><p>إنشاء حسابات الموظفين وتحديد أدوارهم — للمدير فقط</p></div></div>
+      <form id="user-create-form" class="compact-form"><div><label for="new-user-name">اسم الموظف</label><input id="new-user-name" required maxlength="120"></div><div><label for="new-username">اسم المستخدم للدخول</label><input id="new-username" required minlength="3" maxlength="40" pattern="[A-Za-z0-9._-]+" title="حروف إنجليزية وأرقام ونقطة وشرطة فقط"></div><div><label for="new-user-email">البريد الإلكتروني</label><input id="new-user-email" type="email" required></div><div><label for="new-user-password">كلمة مرور مؤقتة</label><input id="new-user-password" type="password" minlength="8" required></div><div><label for="new-user-role">الصلاحية</label><select id="new-user-role" required><option value="sales">موظف مبيعات</option><option value="sales_supervisor">مشرف مبيعات</option><option value="warehouse">أمين المخزن</option><option value="shipping_supervisor">مشرف شحن</option><option value="courier">مندوب توصيل</option><option value="accountant">محاسب</option><option value="admin">مدير النظام</option></select></div><button class="btn primary" type="submit">إنشاء المستخدم</button></form><p id="user-create-message" class="form-message" role="status"></p>
+      <div class="table-wrap"><table><thead><tr><th>الاسم</th><th>اسم المستخدم</th><th>الدور</th><th>الحالة</th></tr></thead><tbody id="users-table"><tr><td colspan="4" class="empty">اضغط تحديث لعرض المستخدمين</td></tr></tbody></table></div><div class="form-actions"><button id="refresh-users" class="btn secondary" type="button">تحديث القائمة</button></div></div></section>
+      <section id="page-online" class="page hidden"><div class="panel"><div class="panel-heading"><div><h3>متصل الآن</h3><p>المستخدمون النشطون، الصفحة المفتوحة، وآخر نشاط مسجل</p></div><button id="refresh-online" class="btn secondary" type="button">تحديث</button></div><div class="table-wrap"><table><thead><tr><th>المستخدم</th><th>اسم المستخدم</th><th>الصفحة الحالية</th><th>النشاط الحالي</th><th>آخر ظهور</th></tr></thead><tbody id="online-table"><tr><td colspan="5" class="empty">جاري التحميل...</td></tr></tbody></table></div><p class="notice">يُحدَّث الحضور كل 30 ثانية. النشاط يعتمد على أحداث التطبيق، وليس تسجيلًا لكل ضغطة مفتاح أو مراقبة خارج النظام.</p></div></section>
       <footer>Hyper Adam Phone · نسخة تأسيسية للتطوير والاختبار</footer>
     </section>
   </div>
